@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import icon from "../assets/icon.jpg";
 
-export default function Header({ isConnected, children }) {
+export default function Header({ children }) {
   useEffect(() => {
     if (!("theme" in localStorage)) {
       if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
@@ -87,33 +87,12 @@ export default function Header({ isConnected, children }) {
             />
           </div>
           <div>
-            <div className="flex items-center">
-              <div className="relative">
-                {isConnected ? (
-                  <span className="flex h-3 w-3">
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
-                  </span>
-                ) : (
-                  <span className="flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500" />
-                  </span>
-                )}
-              </div>
-              {isConnected ? (
-                <p className="ml-2 text-green-500 text-md">Running</p>
-              ) : (
-                <p className="ml-2 text-sky-400 text-md">
-                  Connecting to relay...
-                </p>
-              )}
-            </div>
             <h1 className="text-3xl sm:text-4xl font-medium text-slate-900 dark:text-white opacity-90">
-              Nostr Relay
+              Nostr Online
             </h1>
             <div className="mt-2">
               <span className="text-black/50 dark:text-white/50 font-medium">
-                Private Relay
+                Angor Private Relay
               </span>
             </div>
           </div>

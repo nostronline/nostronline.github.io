@@ -1,335 +1,123 @@
-import { useEffect, useState, useRef } from "react";
-import { usePopper } from "react-popper";
-
+import React from "react"; // Import useState for defining state variables
 import Layout from "./components/Layout";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
-
 import Card from "./components/utility/Card";
 import CopyText from "./components/utility/CopyText";
-import ConnectClient from "./components/ConnectClient";
-import TotalBackups from "./components/TotalBackups";
-import LatestActions from "./components/LatestActions";
-import PublicRelaysModal from "./components/PublicRelaysModal";
-import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
-import {
-  PORT,
-  WEB_SOCKET_RELAY_URL, // Websocket URL of the private relay
-  HTTP_RELAY_URL, // http URL of the private relay
-} from "./constants/constants";
-
-// Event kinds that we want to render in the UI
-const supportedEventKinds = {
-  0: {
-    icon: "📝",
-    name: "Profile Update",
-  },
-  1: {
-    icon: "💭",
-    name: "Post",
-    showContent: true,
-  },
-  2: {
-    icon: "📶",
-    name: "Relay Update",
-  },
-  3: {
-    icon: "🤝",
-    name: "Following Update",
-  },
-  4: {
-    icon: "🔏",
-    name: "Encrypted DM",
-  },
-  5: {
-    icon: "🗑",
-    name: "Deleted Action",
-  },
-  6: {
-    icon: "🔁",
-    name: "Repost",
-  },
-  7: {
-    icon: "🤙",
-    name: "Reaction",
-  },
-  40: {
-    icon: "🧙‍♂️",
-    name: "Channel Creation",
-    showContent: true,
-    contentKey: "name",
-  },
-  41: {
-    icon: "🪄",
-    name: "Channel Update",
-    showContent: true,
-    contentKey: "name",
-  },
-  42: {
-    icon: "📢",
-    name: "Channel Message",
-    showContent: true,
-  },
-  43: {
-    icon: "🙈",
-    name: "Hid Message",
-  },
-  44: {
-    icon: "🙊",
-    name: "Muted User",
-  },
-  22242: {
-    icon: "🔓",
-    name: "Authenticated Relay",
-  },
-  other: {
-    icon: "🛠",
-    name: "Other Action",
-  },
-};
-
-// Total events we want to render in the activity list
-const eventsToRenderLimit = 300;
-
 export default function App() {
-  // State to store events from websocket
-  const [events, setEvents] = useState([]);
-  // State to store the connection status of websocket
-  const [isConnected, setIsConnected] = useState(false);
-  // State to keep track of whether all stored events have been fetched
-  const [hasFetchedAllEvents, setHasFetchedAllEvents] = useState(false);
-  // State to store the relay info as per NIP-11: https://github.com/nostr-protocol/nips/blob/master/11.md
-  const [relayInformationDocument, setRelayInformationDocument] = useState({});
-  // State to track the public relays modal
-  const [showModal, setShowModal] = useState(false);
-  const [isPreventModalClose, setIsPreventModalClose] = useState(false);
-  // State to store the reference and popper elements for the public relays modal
-  const [offset, setOffset] = useState(
-    window.innerWidth > 768 ? [-170, 10] : [0, 10],
-  );
-  const [referenceElement, setReferenceElement] = useState(null);
-  const [popperElement, setPopperElement] = useState(null);
-  const { styles, attributes, update } = usePopper(
-    referenceElement,
-    popperElement,
-    {
-      placement: "bottom-start",
-      modifiers: [
-        {
-          name: "offset",
-          options: {
-            offset: offset,
-          },
-        },
-      ],
-    },
-  );
-  const updatePopper = useRef(update);
-
-  useEffect(() => {
-    // Create websocket connection
-    const socket = new WebSocket(WEB_SOCKET_RELAY_URL);
-
-    // Generate a random subscription ID
-    const subscriptionID =
-      Math.random().toString(36).substring(2, 15) +
-      Math.random().toString(36).substring(2, 15);
-
-    // Handle websocket connection open event
-    socket.onopen = () => {
-      setIsConnected(true);
-      // Reset events array to clear previous events
-      setEvents([]);
-      // Request latest 3000 events
-      socket.send(JSON.stringify(["REQ", subscriptionID, { limit: 3000 }]));
-    };
-
-    // Handle websocket message event
-    socket.onmessage = (message) => {
-      // Parse the message data
-      const data = JSON.parse(message.data);
-
-      if (!data.length) {
-        console.error("Error: No data length", data);
-        return;
-      }
-
-      // Check if data is End of Stored Events Notice
-      // https://github.com/nostr-protocol/nips/blob/master/15.md
-      if (data[0] === "EOSE") {
-        setHasFetchedAllEvents(true);
-        return;
-      }
-
-      // If the data is of type EVENT
-      if (data[0] === "EVENT") {
-        // Add the event to the events array
-        setEvents((prevEvents) => {
-          // Extract the relevant data from the event
-          const { id, kind, created_at, content } = data[2];
-          return [{ id, kind, created_at, content }, ...prevEvents];
-        });
-      }
-    };
-
-    // Handle websocket error
-    socket.onerror = () => {
-      setIsConnected(false);
-    };
-
-    // Handle websocket close
-    socket.onclose = () => {
-      setIsConnected(false);
-    };
-
-    // get nostr-rs-relay version
-    fetch(HTTP_RELAY_URL, {
-      method: "GET",
-      headers: {
-        Accept: "application/nostr+json",
-      },
-    }).then(async (response) => {
-      if (response.ok) {
-        const relayInfoDoc = await response.json();
-        setRelayInformationDocument(relayInfoDoc);
-      }
-    });
-
-    // Cleanup function to run on component unmount
-    return () => {
-      // Check if the websocket is open
-      if (socket.readyState === WebSocket.OPEN) {
-        // Stop previous subscription and close the websocket
-        socket.send(JSON.stringify(["CLOSE", subscriptionID]));
-        socket.close();
-      }
-    };
-  }, []);
-
-  // Update popper offset for the public relays modal when the window is resized
-  useEffect(() => {
-    const handleResize = () => {
-      setOffset(window.innerWidth > 768 ? [-150, 10] : [0, 10]);
-      updatePopper.current?.();
-    };
-
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, []);
-
   return (
     <Layout>
-      <ToastContainer
-        position="bottom-center"
-        autoClose={8000} // close toast after 8 seconds
-        hideProgressBar={true}
-        closeOnClick={false}
-        pauseOnFocusLoss={false}
-        draggable={false}
-        pauseOnHover={false}
-        closeButton={false}
-      />
       <div className="container mx-auto px-4 pb-10">
-        <Header isConnected={isConnected}>
+        <Header>
           <div className="flex">
-            <button
-              ref={setReferenceElement}
-              onClick={(event) => {
-                event.stopPropagation();
-                setShowModal((prevState) => !prevState); // toggles the current state of showModal
-              }}
-              className={`self-center p-3 m-1 rounded-md bg-white ring-1 ring-gray-900/5 dark:ring-white/10 hover:bg-[#CEC8F4] dark:hover:bg-[#264D96] ${
-                showModal
-                  ? "bg-[#CEC8F4] dark:bg-[#264D96] ring-violet-400 dark:ring-white/30"
-                  : "dark:bg-slate-900"
-              }`}
-            >
-              <div className="w-5 h-5 bg-relays-modal-icon-light-mode dark:bg-relays-modal-icon-dark-mode bg-no-repeat bg-center"></div>
-            </button>
             <div className="relay-url-container flex self-center after:bg-white dark:after:bg-slate-900 p-3 rounded-md after:rounded-md">
               <span className="text-sm text-slate-900 dark:text-slate-50">
                 Relay URL:&nbsp;&nbsp;
               </span>
-              <CopyText value={WEB_SOCKET_RELAY_URL} />
+              <CopyText value={"wss://relay.nostronline.online"} />
             </div>
           </div>
         </Header>
-
         <main className="mb-10">
-          <div className="grid grid-cols-1 md:grid-cols-5 xl:grid-cols-3 gap-6 sm:gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-5 xl:grid-cols-1 gap-6 sm:gap-8">
             <Card
               className="order-last xl:order-first md:col-span-5 xl:col-span-1"
-              heading="Get started"
+              heading="What is Nostr?"
             >
-              <ConnectClient relayPort={PORT} />
+              <div className="pt-5 px-10 pb-8">
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-700 dark:text-slate-300 text-sm mb-10 mt-5">
+                    Nostr is a simple, open protocol that enables global,
+                    decentralized, and censorship-resistant social media.
+                  </span>
+                </div>
+                <div className="items-start gap-2">
+                  <span className="text-slate-700 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-md bg-white shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-700 dark:ring-0 dark:shadow-none dark:highlight-white/5">
+                    Simple
+                  </span>
+                  <div className="mt-3">
+                    <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">
+                      The protocol is based on very simple & flexible event
+                      objects (which are passed around as plain JSON) and uses
+                      standard elliptic-curve cryptography for keys and signing.
+                      The only supported transport is websockets connections
+                      from clients to relays. This makes it easy to write
+                      clients and relays and promotes software diversity.
+                    </p>
+                  </div>
+                </div>
+                <div className="items-start gap-2">
+                  <span className="text-slate-700 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-md bg-white shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-700 dark:ring-0 dark:shadow-none dark:highlight-white/5">
+                    Resilient
+                  </span>
+                  <div className="mt-3">
+                    <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">
+                      Because Nostr doesn&apos;t rely on a small number of
+                      trusted servers for moving or storing data, it&apos;s very
+                      resilient. The protocol assumes that relays will disappear
+                      and allows users to connect and publish to an arbitrary
+                      number of relays that they can change over time.
+                    </p>
+                  </div>
+                </div>
+                <div className="items-start gap-2">
+                  <span className="text-slate-700 dark:text-slate-300 text-xs font-bold px-2 py-1 rounded-md bg-white shadow-sm ring-1 ring-slate-900/5 dark:bg-slate-700 dark:ring-0 dark:shadow-none dark:highlight-white/5">
+                    Verifiable
+                  </span>
+                  <div className="mt-3">
+                    <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">
+                      Because Nostr accounts are based on public-key
+                      cryptography it&apos;s easy to verify messages were really
+                      sent by the user in question.
+                    </p>
+                    <p className="text-slate-700 dark:text-slate-300 text-sm mb-3">
+                      Like HTTP or TCP-IP, Nostr is a protocol; an open standard
+                      upon which anyone can build. Nostr is not an app or
+                      service that you sign up for.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </Card>
-
             <Card
-              className="col-1 md:col-span-2 xl:col-span-1"
-              heading="Total actions"
+              className="order-last xl:order-first md:col-span-5 xl:col-span-1"
+              heading="What is Angor?"
             >
-              <TotalBackups
-                loading={!hasFetchedAllEvents}
-                events={events}
-                supportedEventKinds={supportedEventKinds}
-              />
-            </Card>
-
-            <Card
-              className="col-1 md:col-span-3 xl:col-span-1"
-              heading="Latest actions"
-            >
-              <LatestActions
-                loading={!hasFetchedAllEvents}
-                events={events}
-                eventsToRenderLimit={eventsToRenderLimit}
-                supportedEventKinds={supportedEventKinds}
-              />
+              <div className="pt-5 px-10 pb-8">
+                <div className="flex items-start gap-2">
+                  <span className="text-slate-700 dark:text-slate-300 text-sm mb-10 mt-5">
+                    Angor is a decentralized crowdfunding platform leveraging
+                    Bitcoin and nostr, providing a secure and transparent
+                    environment for project owners and investors. With Angor,
+                    investors maintain control of their funds through timelock
+                    contracts, while project owners benefit from aligned
+                    incentives and investor protection. It&apos;s the future of
+                    crowdfunding, empowering participation in innovative
+                    projects with confidence.
+                  </span>
+                </div>
+              </div>
             </Card>
           </div>
         </main>
-
         <Footer
           leftContent={<>&copy; NOSTR ONLINE 2024</>}
           rightContent={
             <>
               Powered by{" "}
               <a
-                href="https://github.com/scsibug/nostr-rs-relay"
+                href="https://github.com/nostronline/relay"
                 target="_blank"
                 className="underline underline-offset-2"
                 rel="noreferrer"
               >
-                nostr-rs-relay
-                {relayInformationDocument.version
-                  ? ` ${relayInformationDocument.version}`
-                  : ""}
+                NOSTR ONLINE
               </a>
-              .
             </>
           }
         />
-        {showModal && (
-          <div
-            ref={setPopperElement}
-            style={styles.popper}
-            {...attributes.popper}
-          >
-            <PublicRelaysModal
-              onClose={() => {
-                if (isPreventModalClose) return;
-                setShowModal(false);
-              }}
-              isPreventModalClose={isPreventModalClose}
-              setIsPreventModalClose={setIsPreventModalClose}
-            />
-          </div>
-        )}
       </div>
     </Layout>
   );
